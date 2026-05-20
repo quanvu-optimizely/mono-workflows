@@ -13,10 +13,14 @@ mono-workflows/
 ├── CLAUDE.md                              # Claude Code's architect-planner role (template)
 ├── .ai/
 │   ├── architecture.md                   # Project knowledge base (fill in per project)
-│   └── stories/                          # Stories and tasks live here (populated at runtime)
+│   ├── planning-tiers.md                 # Adaptive planning depth config (signals, thresholds, behaviors)
+│   ├── stories/                          # Stories and tasks live here (populated at runtime)
+│   ├── quick-tasks/                      # Tier=trivial single-task artifacts
+│   └── epics/                            # Tier=epic phased roadmaps + child stories
 ├── .claude/
 │   └── skills/
-│       ├── story-creator/                # Skill: requirement → bounded stories
+│       ├── tier-classifier/              # Skill: request → planning tier
+│       ├── story-creator/                # Skill: requirement → bounded stories (tier-aware)
 │       └── task-creator/                 # Skill: story → file-scoped tasks
 └── .clinerules/
     ├── execution-agent.md                # Cline's role and constraints
@@ -55,6 +59,12 @@ mono-workflows/
    ```
    /story-creator "your feature description"
    ```
+
+   `story-creator` consults `.ai/planning-tiers.md` to choose a planning depth
+   automatically — `trivial`, `medium`, `large`, or `epic`. You can force a
+   tier with `--tier=<name>`. See
+   [`.claude/skills/story-creator/docs/planning-tiers.md`](.claude/skills/story-creator/docs/planning-tiers.md)
+   for the artifact format each tier produces.
 
 5. **Start executing** — in Cline, for each task:
    ```

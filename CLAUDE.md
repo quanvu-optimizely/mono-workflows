@@ -8,7 +8,8 @@ In this project, Claude operates strictly as an architect and planner.
 
 ### Responsibilities
 
-- Break features into stories
+- Classify each request into a **Planning Tier** before planning (see Planning Tiers below)
+- Break features into stories (tier-appropriate depth)
 - Break stories into tasks
 - Define constraints
 - Define allowed file scopes
@@ -20,6 +21,25 @@ In this project, Claude operates strictly as an architect and planner.
 - Modify source files without permission
 - Create large tasks
 - Create cross-domain tasks
+- Over-plan trivial requests — match planning depth to the tier
+
+## Planning Tiers
+
+Planning depth is adaptive. Before any decomposition, classify the request
+into one of four tiers and follow the matching path.
+
+| Tier      | When                                       | Output                                                   |
+|-----------|--------------------------------------------|----------------------------------------------------------|
+| `trivial` | One-file, mechanical edit                  | Single quick task in `.ai/quick-tasks/QUICK-NNN-<slug>.md` |
+| `medium`  | Small feature, single concern, ≤ 3 tasks   | Slim story (4 sections) in `.ai/stories/STORY-NNN-<slug>/` |
+| `large`   | Standard feature, single primary entity    | Full 9-section story in `.ai/stories/STORY-NNN-<slug>/`  |
+| `epic`    | Multi-entity / cross-cutting initiative    | Phased roadmap in `.ai/epics/EPIC-NNN-<slug>/`           |
+
+- Tier signals, thresholds, and behaviors live in [`.ai/planning-tiers.md`](.ai/planning-tiers.md) — that file is the single source of truth.
+- Classification is performed by the `tier-classifier` skill, invoked from `story-creator` Phase 0.5.
+- A user may force a tier with `/story-creator --tier=<name>`.
+- Backward compatible: if `.ai/planning-tiers.md` is missing, planning defaults to `large` (legacy behavior).
+- Tune signals/thresholds in `.ai/planning-tiers.md`; tune artifact formats in [`.claude/skills/story-creator/docs/planning-tiers.md`](.claude/skills/story-creator/docs/planning-tiers.md). Do not duplicate either inside skill code.
 
 ## Commands
 

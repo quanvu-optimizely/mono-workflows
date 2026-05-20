@@ -31,6 +31,15 @@ Stop after Phase 6. Do not continue to the next task.
 2. `.ai/stories/STORY-NNN-<slug>/context.md` — read shared artifacts and prior state
 3. `.ai/stories/STORY-NNN-<slug>/tasks/TASK-NNN-<slug>.md` — read the current task
 
+**Quick tasks (Planning Tier = trivial)**: if the trigger names a
+`QUICK-NNN-<slug>` instead of a story/task pair, load only:
+
+1. `.ai/quick-tasks/QUICK-NNN-<slug>.md` — single file with Objective, Allowed
+   Files, Acceptance Criteria, Context Update block.
+
+Skip the story/context loads. Phase 5 appends to
+`.ai/quick-tasks/quick-log.md` instead of `context.md` / `execution-log.md`.
+
 **Only load additional files if the task explicitly names them** in its "Allowed Files" section.
 
 **FORBIDDEN in this phase:**

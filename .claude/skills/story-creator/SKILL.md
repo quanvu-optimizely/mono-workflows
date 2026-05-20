@@ -60,14 +60,16 @@ in story titles, constraint blocks, and affected areas.
 /story-creator "Add search to the notes list"
 /story-creator --prd path/to/requirements.md
 /story-creator --prd path/to/requirements.md --dry-run
-/story-creator STORY-001-<slug> --tasks          # generate tasks for an existing story
-/story-creator STORY-001-<slug> --retask         # regenerate tasks (preserves story.md)
+/story-creator --tier=medium "Add archived filter"          # force a planning tier
+/story-creator STORY-001-<slug> --tasks                     # generate tasks for an existing story
+/story-creator STORY-001-<slug> --retask                    # regenerate tasks (preserves story.md)
 ```
 
 | Flag | Behavior |
 |---|---|
 | `"<description>"` | Inline requirement; auto-assign STORY-NNN-<slug> |
 | `--prd <path>` | Read requirement from a markdown file |
+| `--tier=<name>` | Force planning tier (trivial / medium / large / epic). Bypasses tier-classifier. |
 | `--dry-run` | Print story plan to conversation; do NOT write files |
 | `STORY-NNN-<slug> --tasks` | Skip story creation; invoke task-creator only |
 | `STORY-NNN-<slug> --retask` | Re-run task-creator; existing tasks are overwritten |
@@ -90,6 +92,29 @@ in story titles, constraint blocks, and affected areas.
    prepositions). Full directory name: `STORY-NNN-<slug>`
    (e.g. `STORY-001-<entity>-data-layer`, `STORY-004-<feature>-ui`).
 6. Honor any open architecture decisions recorded in `.ai/architecture.md § Architecture Decisions`.
+
+### Phase 0.5 — Planning Tier Classification
+
+Before doing feature analysis, decide **how much planning this request deserves**.
+
+1. Read `.ai/planning-tiers.md` (single source of truth for tier behavior).
+2. If the user passed `--tier=<name>`, use that tier and skip to the tier-branch.
+3. Otherwise invoke the `tier-classifier` skill on the input (inline description
+   or PRD body). It returns a tier + rationale block.
+4. Record `Tier: <name>` and `Tier Rationale: <one line>` at the top of every
+   artifact this run produces (quick task, story metadata, or epic.md).
+
+**Tier branch** (each branch is described in `docs/planning-tiers.md`):
+
+| Tier      | What this run produces                                                    | Phases below that run                                            |
+|-----------|---------------------------------------------------------------------------|------------------------------------------------------------------|
+| `trivial` | One quick-task file in `.ai/quick-tasks/QUICK-NNN-<slug>.md`              | Skip Phases 1–6. Use the Quick Task path in `docs/planning-tiers.md`. |
+| `medium`  | One slim story (4 required sections) with ≤ 3 tasks                       | Run Phase 1 lite, skip Phase 2 split, run a slim Phase 4, Phase 5, Phase 6. |
+| `large`   | Default. One full story (9 sections) with ≤ 7 tasks                       | Run Phases 1–6 as written below.                                 |
+| `epic`    | Epic dir `.ai/epics/EPIC-NNN-<slug>/` with phased roadmap + Phase-1 stories | Run Phase 1, then the Epic path in `docs/planning-tiers.md`, then Phase 5/6 per generated story. |
+
+Do **not** duplicate signal weights, thresholds, or behaviors inside this file —
+they live in `.ai/planning-tiers.md` and `docs/planning-tiers.md`.
 
 ### Phase 1 — Feature Analysis
 
@@ -313,10 +338,12 @@ Before writing any story file:
 
 ## Reference Files
 
+- [docs/planning-tiers.md](docs/planning-tiers.md) — tier branches: Quick Task, Slim Story, Full Story, Epic
 - [docs/story-format.md](docs/story-format.md) — canonical 9-section story template
 - [docs/sizing-guide.md](docs/sizing-guide.md) — story sizing gates and split patterns
 - [docs/anti-patterns.md](docs/anti-patterns.md) — 10 story anti-patterns + banned phrases
 - [docs/orchestration-protocol.md](docs/orchestration-protocol.md) — task-creator integration spec
+- [.ai/planning-tiers.md](../../../.ai/planning-tiers.md) — central tier configuration (signals, thresholds, behaviors)
 - [templates/story.md](templates/story.md) — blank story template
 - [templates/context.md](templates/context.md) — blank context template
 - [examples/](examples/) — add your own project-specific story examples here
