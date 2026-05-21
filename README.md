@@ -13,15 +13,18 @@ mono-workflows/
 ├── CLAUDE.md                              # Claude Code's architect-planner role (template)
 ├── .ai/
 │   ├── architecture.md                   # Project knowledge base (fill in per project)
+│   ├── intent-verification.md            # Intent routing modes, signals, and rules
 │   ├── planning-tiers.md                 # Adaptive planning depth config (signals, thresholds, behaviors)
 │   ├── stories/                          # Stories and tasks live here (populated at runtime)
 │   ├── quick-tasks/                      # Tier=trivial single-task artifacts
 │   └── epics/                            # Tier=epic phased roadmaps + child stories
 ├── .claude/
 │   └── skills/
+│       ├── intent-verification/          # Skill: route request → mode before any planning
 │       ├── tier-classifier/              # Skill: request → planning tier
 │       ├── story-creator/                # Skill: requirement → bounded stories (tier-aware)
-│       └── task-creator/                 # Skill: story → file-scoped tasks
+│       ├── task-creator/                 # Skill: story → file-scoped tasks
+│       └── quick-task/                   # Skill: direct execution bypass for trivial changes
 └── .clinerules/
     ├── execution-agent.md                # Cline's role and constraints
     └── workflows/
@@ -55,14 +58,23 @@ mono-workflows/
 
 3. **Update** `CLAUDE.md` with your project's stack summary and build commands.
 
-4. **Start planning** — in Claude Code:
+4. **Start planning** — in Claude Code, just describe what you need:
    ```
-   /story-creator "your feature description"
+   Add user authentication via OAuth
    ```
 
+   Claude Code will first run the **intent verification** gate to confirm
+   whether you want a quick fix, a discussion, or full orchestration — then
+   route automatically. For explicit control:
+
+   | Command | What it does |
+   |---|---|
+   | `/quick-task "..."` | Execute a small change directly (no orchestration) |
+   | `/story-creator "..."` | Full story + task decomposition |
+   | `/story-creator --tier=<name> "..."` | Force a planning tier |
+
    `story-creator` consults `.ai/planning-tiers.md` to choose a planning depth
-   automatically — `trivial`, `medium`, `large`, or `epic`. You can force a
-   tier with `--tier=<name>`. See
+   automatically — `trivial`, `medium`, `large`, or `epic`. See
    [`.claude/skills/story-creator/docs/planning-tiers.md`](.claude/skills/story-creator/docs/planning-tiers.md)
    for the artifact format each tier produces.
 
@@ -76,23 +88,31 @@ mono-workflows/
 ## Workflow at a glance
 
 ```
-User requirement
+User request
       │
       ▼
-/story-creator "feature"          ← Claude Code decomposes into stories
-      │  writes .ai/stories/STORY-NNN-<slug>/story.md
+Intent Verification               ← What does the user actually want?
       │
-      ▼
-/task-creator STORY-NNN-<slug>    ← Claude Code decomposes story into tasks
-      │  writes .ai/stories/STORY-NNN-<slug>/tasks/TASK-NNN-<slug>.md
+      ├── Question / discussion   → Answer directly (no files written)
       │
-      ▼
-Cline executes TASK-001           ← Cline reads task, implements, updates context
-      │  modifies source files
-      │  appends to context.md
+      ├── Mode 1: small change    → /quick-task  ← direct execution, no orchestration
+      │   writes .ai/quick-tasks/QUICK-NNN-<slug>.md
       │
-      ▼
-Human reviews → triggers TASK-002 ← Repeat until story complete
+      └── Mode 3: full workflow   ↓
+            │
+            ▼
+      /story-creator "feature"    ← classify tier, decompose into stories
+            │  writes .ai/stories/STORY-NNN-<slug>/story.md
+            │
+            ▼
+      /task-creator STORY-NNN     ← decompose story into file-scoped tasks
+            │  writes .ai/stories/STORY-NNN-<slug>/tasks/TASK-NNN-<slug>.md
+            │
+            ▼
+      Cline executes TASK-001     ← reads task, implements, updates context.md
+            │
+            ▼
+      Human reviews → TASK-002   ← repeat until story complete
 ```
 
 ---
@@ -103,8 +123,10 @@ Human reviews → triggers TASK-002 ← Repeat until story complete
 |---|---|
 | `.ai/architecture.md` | Stack, stack rules, entities, path conventions, commands |
 | `CLAUDE.md` | Stack summary, build commands |
+| `.ai/intent-verification.md` | Tune ambiguity signals and routing bias (optional) |
+| `.ai/planning-tiers.md` | Tune tier thresholds and tier signals (optional) |
 
-All other files (skills, clinerules) are generic and work unchanged across projects.
+The skill files and `.clinerules/` are generic and work unchanged across projects.
 
 ---
 

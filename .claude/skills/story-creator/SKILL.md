@@ -80,6 +80,11 @@ in story titles, constraint blocks, and affected areas.
 
 ### Phase 0 — Locate and Parse Input
 
+0. **Confirm intent (Mode 3).** story-creator produces full orchestration
+   artifacts. An explicit `/story-creator` invocation already confirms Mode 3 —
+   proceed. If you arrived here by auto-trigger on a vague phrase, run the
+   `intent-verification` gate first (see `.ai/intent-verification.md`) and
+   continue only if it routes to Mode 3.
 1. **Read `.ai/architecture.md`** — load stack constraints, domain vocabulary,
    path conventions, and open architecture decisions. Stop if the file is
    missing and tell the user to create it.
