@@ -7,7 +7,7 @@ description: >
   "generate tasks from story", or "break down this feature into tasks". Produces
   deterministic, bounded tasks with explicit file scope, acceptance criteria,
   and dependency chains.
-version: 1.1.0
+version: 1.2.0
 ---
 
 # task-creator — Implementation Task Generator
@@ -94,9 +94,14 @@ task (or is split if it fails the size gate). Apply the Concern Taxonomy:
 | Config | Env vars, config files | 1 task |
 | Test suite | Unit/integration tests | 1 task per tested module |
 
-### Phase 2 — Dependency Graph
+### Phase 2 — Dependency Graph (DAG)
 
-Build an explicit dependency ordering:
+Build an explicit **DAG** over the proposed tasks. The graph is the
+authoritative source for `depends_on`, `parallel_group`, `blocked_by`,
+`critical_path`, and `resource_conflicts` metadata emitted in each task file.
+
+Read `docs/dependency-graph.md` for the full schema, relationship taxonomy,
+group naming, and conflict detection rules. Summary:
 
 ```
 Data model
@@ -111,7 +116,7 @@ Data model
                                      └─ Tests
 ```
 
-Rules:
+Default ordering rules:
 
 - Data model tasks have NO dependencies (run first, lowest IDs).
 - Type tasks depend on data model tasks.
@@ -123,7 +128,55 @@ Rules:
 - Page tasks depend on component tasks.
 - Test tasks have the highest IDs and depend on the module under test.
 
-Assign IDs `TASK-001`, `TASK-002`, … in dependency order. Lower ID = runs sooner.
+**Edge labeling.** Every relationship is classified as one of:
+
+| Type | When | Goes into |
+|---|---|---|
+| `hard` | Downstream imports a concrete artifact from upstream | `depends_on` |
+| `soft` | Logical sequencing preference, no import | `soft_deps` |
+| `none` | Independent tasks | (omitted) |
+| `resource_conflict` | Same file, same migration, same global state | `resource_conflicts` |
+| `sequencing_preference` | Review-order preference only | `soft_deps` |
+
+Only `hard` edges create `depends_on`. Only `hard` edges block
+parallelization within a group.
+
+**Parallel group assignment.** Use canonical group names from
+`docs/dependency-graph.md § Group Naming` (`data-foundation`, `data-access`,
+`backend-logic`, `api-surface`, `frontend-hooks`, `frontend-ui`,
+`tests-unit`, `tests-integration`, `docs`, `infra`). Tasks in the same group
+with no `hard` edge and no `resource_conflict` between them are parallel-safe.
+
+**Critical path.** Compute the longest hard-dependency chain through the
+graph. Flag tasks on that chain with `critical_path: true`.
+
+Assign IDs `TASK-001`, `TASK-002`, … in topological order. Lower ID =
+earlier wave. Ties within a wave: order by group name, then by file count.
+
+### Phase 2.5 — Conflict Detection
+
+Before writing any task file, scan all proposed tasks for resource
+conflicts. A conflict exists if ANY hold:
+
+1. Two tasks share an Allowed Files path (`[modify]`/`[modify]` or
+   overlapping `[create]`).
+2. Two tasks produce DB migrations on the same schema or table.
+3. Two tasks mutate the same store/reducer, DI registration, env loader,
+   or global config.
+4. Two tasks touch tightly coupled domain modules (auth + session, router +
+   route registry, theme provider + tokens).
+5. Two tasks modify the same `package.json`, lockfile, Dockerfile, or CI
+   workflow.
+
+For each conflict, apply the **lightest** fix:
+
+1. Split files so each task owns disjoint paths.
+2. Merge the two tasks if combined size still passes the four sizing gates.
+3. Serialize: promote the weaker side to a `hard` dep on the stronger.
+
+Never let a detected conflict survive into the emitted task files.
+Populate `resource_conflicts` only when serialization is the chosen fix
+(so the orchestrator knows to refuse concurrent dispatch).
 
 ### Phase 3 — Task Sizing Check
 
@@ -180,21 +233,37 @@ Tasks: TASK-001 … TASK-NNN
 
 ### Phase 6 — Summary
 
-Print to the conversation:
+Print to the conversation. Output has two blocks: the task list and the
+parallel execution plan derived from the DAG.
 
 ```
 STORY-NNN-<slug>: <title>
 ──────────────────────────────────────────────────────
-TASK-001-<entity>-data-model      [no deps]        <Entity> Data Model
-TASK-002-<entity>-types           [deps: 001]      <Entity> Types
-TASK-003-<entity>-repository      [deps: 002]      <Entity> Repository
-TASK-004-post-<entity>-route      [deps: 003]      POST /api/<entity> Route
-TASK-005-<entity>-card-component  [deps: 002]      <Entity>Card Component
-TASK-006-<entity>-page            [deps: 004,005]  /<entity> Page
-TASK-007-<entity>-repo-tests      [deps: 003]      <Entity> Repository Unit Tests
+TASK-001-<entity>-data-model      [no deps]        group: data-foundation   <Entity> Data Model
+TASK-002-<entity>-types           [deps: 001]      group: data-foundation   <Entity> Types
+TASK-003-<entity>-repository      [deps: 002]      group: data-access       <Entity> Repository
+TASK-004-post-<entity>-route      [deps: 003]      group: api-surface       POST /api/<entity> Route
+TASK-005-<entity>-card-component  [deps: 002]      group: frontend-ui       <Entity>Card Component
+TASK-006-<entity>-page            [deps: 004,005]  group: frontend-ui       /<entity> Page
+TASK-007-<entity>-repo-tests      [deps: 003]      group: tests-unit        <Entity> Repository Unit Tests
 ──────────────────────────────────────────────────────
 7 tasks written to .ai/stories/STORY-NNN-<slug>/tasks/
+
+Parallel Execution Plan
+──────────────────────────────────────────────────────
+Wave 1 (no deps):       TASK-001
+Wave 2 (after Wave 1):  TASK-002
+Wave 3 (after Wave 2):  TASK-003 ‖ TASK-005
+Wave 4 (after Wave 3):  TASK-004 ‖ TASK-007
+Wave 5 (after Wave 4):  TASK-006
+
+Critical path:          TASK-001 → TASK-002 → TASK-003 → TASK-004 → TASK-006
+Resource conflicts:     none
+Bottlenecks:            TASK-002 (3 downstream consumers)
 ```
+
+`‖` denotes tasks that may run in parallel within the same wave.
+Each wave gates on completion of the previous wave.
 
 ---
 
@@ -340,6 +409,31 @@ library not approved by the project stack.
 approved class merging utility.
 → Add the class merging utility requirement per `.ai/architecture.md § Stack Rules`.
 
+**ANTI-DAG-001 — Missing dependency metadata**: Task file lacks the
+`## Dependency Metadata` block, or fields (`depends_on`, `parallel_group`,
+`blocked_by`, `parallelizable`) are absent.
+→ Emit the full metadata block per `docs/task-format.md § Dependency Metadata`.
+
+**ANTI-DAG-002 — Unsafe parallel claim**: A task marked `parallelizable: true`
+shares Allowed Files with another task in the same `parallel_group`, or has
+a non-empty `resource_conflicts` list.
+→ Set `parallelizable: false`, populate `resource_conflicts`, OR split files.
+
+**ANTI-DAG-003 — Over-serialization**: Two tasks with no shared files, no
+shared state, and no import relationship are placed in a hard dependency
+chain.
+→ Demote the edge to `soft_deps` (or `none`) and place both tasks in the
+same wave.
+
+**ANTI-DAG-004 — Implicit resource conflict**: Two tasks modify the same
+file, registry, or migration target but neither lists the other in
+`resource_conflicts`.
+→ Run Phase 2.5 again; populate `resource_conflicts` on both sides.
+
+**ANTI-DAG-005 — Missing critical path**: No task in the story has
+`critical_path: true`.
+→ Compute the longest hard-dependency chain; flag every task on it.
+
 ---
 
 ## Mandatory Pre-Flight Checklist
@@ -356,6 +450,13 @@ Before writing any task file:
 - [ ] Tasks are ordered so dependencies come first (lower ID = runs sooner)
 - [ ] No banned phrases (see `docs/anti-patterns.md` § Red-Flag Phrase Blocklist)
 - [ ] UI tasks include stack-approved token and class merging constraints
+- [ ] Task file includes `## Dependency Metadata` block with all fields
+- [ ] `depends_on` lists only `hard` edges (artifact-consuming upstreams)
+- [ ] `parallel_group` uses a canonical group name (see `docs/dependency-graph.md`)
+- [ ] `resource_conflicts` populated if any same-file / shared-state collision
+- [ ] `parallelizable: false` whenever `resource_conflicts` is non-empty
+- [ ] At least one task in the story flagged `critical_path: true`
+- [ ] Phase 2.5 conflict detection ran with zero unresolved conflicts
 
 ---
 
@@ -364,4 +465,5 @@ Before writing any task file:
 - [docs/task-format.md](docs/task-format.md) — canonical template + field rules
 - [docs/sizing-guide.md](docs/sizing-guide.md) — four gates + splitting patterns
 - [docs/anti-patterns.md](docs/anti-patterns.md) — anti-pattern catalogue
+- [docs/dependency-graph.md](docs/dependency-graph.md) — DAG schema, relationship types, parallel groups, conflict detection
 - [examples/](examples/) — add your own project-specific task examples here
