@@ -76,6 +76,29 @@ List each with the artifact it produces.
 
 If none: `None`
 
+## Dependency Metadata
+
+Structured DAG metadata consumed by orchestrators. All fields MANDATORY.
+See `docs/dependency-graph.md` for full schema and rules.
+
+\`\`\`yaml
+task_id: TASK-NNN-<slug>
+depends_on:           # hard deps only (artifact-consuming upstreams)
+  - TASK-NNN-<slug>
+soft_deps: []         # sequencing preferences only; not blocking
+blocked_by:           # union of depends_on + resource_conflicts keys
+  - TASK-NNN-<slug>
+parallelizable: true  # false if any hard dep in same group or any resource_conflict
+parallel_group: <canonical-group>   # data-foundation | data-access | backend-logic |
+                                    # api-surface | frontend-hooks | frontend-ui |
+                                    # tests-unit | tests-integration | docs | infra
+resource_conflicts:   # tasks touching overlapping files / shared state
+  - TASK-NNN-<slug>: <reason e.g. "same file: src/lib/auth.ts">
+critical_path: false  # true if task lies on the longest hard-dep chain
+relationship_notes: |
+  (optional, 1–2 lines on non-obvious coupling)
+\`\`\`
+
 ## Validation Steps
 
 Ordered list of shell commands runnable from the project root.
@@ -177,6 +200,18 @@ following block to `.ai/stories/STORY-NNN-<slug>/context.md` under
 - Include what artifact the upstream task produces.
 - If none: write `None` — do not omit the section.
 - Implicit imports (types, repositories) MUST be listed here.
+
+### `## Dependency Metadata`
+
+- MANDATORY block; verbatim YAML keys; preserve key order.
+- `depends_on` is `hard`-edge only. Implicit imports → add the producing task.
+- `soft_deps` carries `soft` and `sequencing_preference` edges. Empty list if none.
+- `blocked_by` = `depends_on` ∪ keys of `resource_conflicts`. Scheduler reads this.
+- `parallelizable` is `false` if ANY of: `depends_on` non-empty AND target shares group; `resource_conflicts` non-empty.
+- `parallel_group` MUST be one of the canonical names in `docs/dependency-graph.md § Group Naming`. Invent only if no canonical fits.
+- `resource_conflicts` lists task IDs that touch overlapping files / shared global state, each with a one-phrase reason.
+- `critical_path` `true` iff the task lies on the longest hard-dependency chain through the story. At least one task per story MUST be flagged.
+- `relationship_notes` optional. Use only when coupling is non-obvious.
 
 ### `## Validation Steps`
 
